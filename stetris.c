@@ -126,7 +126,7 @@ int readSenseHatJoystick() {
 // has changed the playfield
 void renderSenseHatMatrix(bool const playfieldChanged) {
 
-  memset(map, 0, FILESIZE);
+  memset(retrievedDeviceMapping, 0, fileLength);
 
   int i;
   int y;
@@ -134,7 +134,7 @@ void renderSenseHatMatrix(bool const playfieldChanged) {
   for (i = 0; i < 8; i++) {
       for (y = 0; y < 8; y++) {
           if(game.playfield[i][y].occupied){
-              *(p + (y) + i*8) = 0xF800;
+              *(startOfBuff + (y) + i*8) = 0xF800;
           }
       }
   }
