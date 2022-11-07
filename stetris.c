@@ -70,7 +70,7 @@ gameConfig game = {
                    .initNextGameTick = 50,
 };
 uint16_t* startOfBuff;
-
+int joystickFileDesc;
 uint16_t *retrievedDeviceMapping;
 
 
@@ -88,17 +88,38 @@ bool initializeSenseHat() {
 
     
     struct fb_fix_screeninfo constantInfo;
-    if (ioctl(fBuff, FBIOGET_FSCREENINFO, &constantInfo) == -1 || strcmp(constantInfo.id, "RPi-Sense FB") != 0) { // check for fails and close in case of failing to read 'static' device contents/constants. Check that we read rpi sense fb and not other device
+    if (ioctl(fBuff, FBIOGET_FSCREENINFO, &constantInfo) == -1 || strcmp(constantInfo.id, "RPi-Sense FB") != 0) 
+    { // check for fails and close in case of failing to read 'static' device contents/constants. Check that we read rpi sense fb and not other device
         close(fBuff); // release it by closing it, we have the wrong device or reading error
         exit(EXIT_FAILURE);
     }
 
     retrievedDeviceMapping = mmap(NULL, fileLength, PROT_READ | PROT_WRITE, MAP_SHARED, fBuff, 0);
-    if (retrievedDeviceMapping == MAP_FAILED) {
+    if (retrievedDeviceMapping == MAP_FAILED) 
+    {
         close(fBuff);
         exit(EXIT_FAILURE);
     }
     
+    char inEvent0[256]; 
+    joystickFileDesc = open("/dev/input/event0", 0x0002);
+    
+
+    if (joystickFileDesc == -1) 
+    { 
+      close(joystickFileDesc);
+      exit(EXIT_FAILURE);
+    }
+    else {
+      ioctl(joystickFileDesc, EVIOCGNAME(sizeof(inEvent0)), inEvent0);
+    }
+    
+    
+    if (strcmp("Raspberry Pi Sense HAT Joystick", inEvent0) != 0) 
+    {
+      close(joystickFileDesc); // close it to release it, we have the wrong one
+      return false;
+    }
 
     memset(retrievedDeviceMapping, 0, fileLength); // Wipe led buffer slots
     startOfBuff = retrievedDeviceMapping; // set pointer for access to location from renderSenseHatMatrix function later on
@@ -355,13 +376,15 @@ int readKeyboard() {
 
   if (poll(&pollStdin, 1, 0)) {
     lkey = fgetc(stdin);
-    //fprintf(stdout, "key code was: %i", lkey);
+    fprintf(stdout, "\n key code was: %i 3 \n ", lkey);
     if (lkey != 27)
       goto exit;
     lkey = fgetc(stdin);
+    fprintf(stdout, "n key code was: %i 2 \n ", lkey);
     if (lkey != 91)
       goto exit;
     lkey = fgetc(stdin);
+    fprintf(stdout, "\n key code was: %i 1 \n ", lkey);
   }
  exit:
     switch (lkey) {
@@ -461,12 +484,38 @@ int main(int argc, char **argv) {
   renderConsole(true);
   renderSenseHatMatrix(true);
 
+  struct pollfd joystickStdin = {
+    .events = POLLIN,
+    .fd = joystickFileDesc
+  };
+
   while (true) {
     struct timeval sTv, eTv;
     gettimeofday(&sTv, NULL);
 
-    int key = readSenseHatJoystick();
-    if (!key)
+  
+    int key = poll(&joystickStdin,1,0);
+    if(key) {
+      struct input_event joystickStdinEvent;
+      read(joystickFileDesc, &joystickStdinEvent, sizeof(joystickStdinEvent));
+      
+      if ((joystickStdinEvent.value != 1 /*&& joystickStdinEvent.value != 2*/) || joystickStdinEvent.type != EV_KEY) //we could check for just 1 or 2 so you only move on only press down or only hold down etc but task didnt specify
+      {
+          key = readKeyboard();//goto resetKeyVal;
+      }
+      else {
+        if (joystickStdinEvent.code == KEY_UP || joystickStdinEvent.code == KEY_RIGHT || joystickStdinEvent.code == KEY_DOWN  || joystickStdinEvent.code == KEY_LEFT  || joystickStdinEvent.code == KEY_ENTER ){
+            key = joystickStdinEvent.code;
+            fprintf(stdout, "\n key code from js overridden(!) reading from its stdin was: %i 3 \n ", key);
+          }
+          else {
+            key = readKeyboard();
+            }
+          
+        }
+      
+    }
+    else if (!key)
       key = readKeyboard();
     if (key == KEY_ENTER)
       break;
